@@ -1,0 +1,90 @@
+高量战法早盘预备池提醒（三策略版，每日 9:00 触发）。
+V5.3.30 工业级完整版（含建仓时机判定 R090-R094）
+
+## ⚠️ 在主 session 跑（mode=sessionId，session_id=me）
+
+直接输出报告给用户，**不要调 communicate**。
+
+## 🎯 任务目标
+
+每天 9:00 开盘前，读取 daily_prep_pool 表，给出**三套预备池**的建仓建议：
+- 短线预备池前 5 名
+- 长线预备池前 3 名
+- 底仓预备池前 2 名
+
+## 🔁 执行步骤
+
+### 1️⃣ 读取三套预备池
+```python
+import sqlite3
+from datetime import datetime
+
+today = datetime.now().strftime('%Y-%m-%d')
+conn = sqlite3.connect('/workspace/stock_db/candidates.db')
+
+for strategy, label in [('SHORT_TERM', '短线'), ('LONG_TERM', '长线'), ('CORE_HOLDING', '底仓')]:
+    cur = conn.execute('''
+        SELECT rank, code, name, total_score, signal_count
+        FROM daily_prep_pool
+        WHERE prep_date = ? AND strategy = ?
+        ORDER BY rank
+    ''', (today, strategy))
+    pool = cur.fetchall()
+    print(f'{label}预备池:')
+    for r in pool:
+        print(f'  #{r[0]} {r[1]} {r[2]}: 评分 {r[3]} 信号 {r[4]}')
+conn.close()
+```
+
+### 2️⃣ 拉取实时开盘价
+
+对预备池每只股票拉取实时数据：
+```bash
+curl -s 'http://qt.gtimg.cn/q=sh600030'
+curl -s 'http://qt.gtimg.cn/q=sz002293'
+```
+
+### 3️⃣ 拉取持仓状态
+
+```python
+import sqlite3
+conn = sqlite3.connect('/workspace/stock_db/positions.db')
+cur = conn.execute('SELECT code, name, shares, strategy_type, active FROM positions WHERE active=1')
+positions = cur.fetchall()
+conn.close()
+```
+
+### 4️⃣ 输出报告
+
+```
+=== 高量战法早盘预备池（三策略版）===
+⏰ 2026-09-08 09:00
+
+💼 当前持仓:
+  - [策略] [代码] [名称] [股数]股 @ [成本]
+  - 或: 空仓
+
+🏆 短线预备池（仓位 7-17%）:
+  #1 [code] [name]: 评分 [score] 信号 [n]/6
+     昨收 [price] | 9:00 现价 [current] | 涨跌 [pct]%
+  ...
+
+🏆 长线预备池（仓位 15-25%）:
+  ...
+
+🏆 底仓预备池（仓位 30-50%）:
+  ...
+
+💡 操作建议:
+  - 短线用户: 从短线预备池 #1~#3 选 1 个三信号齐全的建仓
+  - 长线用户: 从长线预备池 #1 建仓（参考 R068 大盘择时）
+  - 底仓用户: 从底仓预备池 #1 建仓（永久持有）
+  - R057 早盘 9:30-9:45 不追涨
+  - R058 30 分钟内必须决策
+```
+
+## 📌 关键约束
+- 不要删除自己（长期任务，每工作日 9:00 触发）
+- 直接输出报告，不调 communicate
+- 三套预备池同时输出
+- 用户根据当前活跃策略选择

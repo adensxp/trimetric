@@ -1,0 +1,82 @@
+[
+  {
+    "name": "stock-db-daily-update",
+    "schedule": "0 16 * * 1-5",
+    "trigger": "每个工作日 16:00",
+    "task_id": "430676649251295",
+    "purpose": "拉取 226 只 A 股 3 类增量数据（日 K / 股东户数 / 融资融券）",
+    "output": "master.db 更新 + positions/capital update-pnl + review 审查"
+  },
+  {
+    "name": "daily-pool-analysis",
+    "schedule": "30 16 * * 1-5",
+    "trigger": "每个工作日 16:30",
+    "task_id": "439121248117120",
+    "purpose": "三策略全量评分（短线+长线+底仓）",
+    "output": "9-9 预备池写入 daily_prep_pool 表"
+  },
+  {
+    "name": "morning-prep-list",
+    "schedule": "0 9 * * 1-5",
+    "trigger": "每个工作日 9:00",
+    "task_id": "438632162218424",
+    "purpose": "读取 daily_prep_pool，输出三套预备池 + 实时价",
+    "output": "早盘操作建议报告"
+  },
+  {
+    "name": "v5-3-30-monitor-935",
+    "schedule": "35 9 * * 1-5",
+    "trigger": "每个工作日 9:35",
+    "task_id": "435267725082961",
+    "purpose": "盘中完整监控（建仓+加仓+减仓+清仓）",
+    "output": "持仓 + 预备池告警"
+  },
+  {
+    "name": "v5-3-30-monitor-1000",
+    "schedule": "0 10 * * 1-5",
+    "trigger": "每个工作日 10:00",
+    "task_id": "435267725082962",
+    "purpose": "盘中完整监控",
+    "output": "持仓 + 预备池告警"
+  },
+  {
+    "name": "v5-3-30-monitor-1100",
+    "schedule": "0 11 * * 1-5",
+    "trigger": "每个工作日 11:00",
+    "task_id": "435267725082963",
+    "purpose": "盘中完整监控",
+    "output": "持仓 + 预备池告警"
+  },
+  {
+    "name": "v5-3-30-monitor-1330",
+    "schedule": "30 13 * * 1-5",
+    "trigger": "每个工作日 13:30",
+    "task_id": "435267725082964",
+    "purpose": "盘中完整监控",
+    "output": "持仓 + 预备池告警"
+  },
+  {
+    "name": "v5-3-30-monitor-1430",
+    "schedule": "30 14 * * 1-5",
+    "trigger": "每个工作日 14:30",
+    "task_id": "435267725082965",
+    "purpose": "盘中完整监控",
+    "output": "持仓 + 预备池告警"
+  },
+  {
+    "name": "daily-quality-check",
+    "schedule": "0 8 * * 1-5",
+    "trigger": "每个工作日 8:00",
+    "task_id": "（部署机回填）",
+    "purpose": "494 池质量降级扫描（W19/W20/W22/W16/ROE）",
+    "output": "quality_alert_log 警报 + critical 持仓警报即时报告"
+  },
+  {
+    "name": "pool-rotation",
+    "schedule": "0 9 1 1,7 *",
+    "trigger": "每年 1/7 月 1 日 9:00",
+    "task_id": "（部署机回填）",
+    "purpose": "股票池半年轮替（沪深300调整 + 行业 Top10）",
+    "output": "dry-run 三清单 → 用户确认后执行 + 旧池备份"
+  }
+]

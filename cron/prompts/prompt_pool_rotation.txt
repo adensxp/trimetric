@@ -1,0 +1,30 @@
+高量战法 pool-rotation 任务（长期，每年 1 月 1 日 / 7 月 1 日 9:00 触发）。
+V5.3.31 四库架构（master/candidates/positions/capital）
+
+## ⚠️ 重要：你直接在主 session 跑
+
+本任务已设置为 `mode=sessionId`，`session_id=me`，触发后**直接跑在主 session 里**。本任务**必须等用户确认后才执行真实轮替**。
+
+## 🎯 任务目标
+
+按最新沪深 300 成分股 + 申万 31 行业 Top 10 轮替 494 股票池（随指数半年调整同步）。**先 dry-run 展示影响，经用户确认后执行。**
+
+## 🔁 执行流程
+
+### 1️⃣ dry-run（不落盘）
+bash: cd /workspace/stock_db && python3 pool_rotation.py --dry-run
+
+### 2️⃣ 向用户展示三清单
+- `removed`：被剔除的票（重点标出**是否在持仓中**——在持仓的剔除会触发 CRITICAL 警报，需先减/清仓）
+- `added`：新入池的票
+- `kept`：保留的票
+
+### 3️⃣ 等待用户确认
+- 用户说「执行」→ 跑 `python3 pool_rotation.py`（真实轮替；备份旧池至 /workspace/dist/db/pool_history/；持仓被剔除 → critical 警报写入 candidates.db）
+- 用户说「跳过」→ 结束，明年再轮替
+
+## ✅ 输出要求
+
+- 三清单统计（removed/added/kept 数量）
+- 持仓影响分析（被剔除的票 × 当前持仓 = CRITICAL）
+- 备份文件路径

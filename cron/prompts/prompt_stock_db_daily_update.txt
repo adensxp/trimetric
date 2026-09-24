@@ -1,0 +1,123 @@
+高量战法 stock-db-daily-update 任务（长期，每工作日 16:00 触发）。
+V5.3.30 工业级完整版（含建仓时机判定 R090-R094）
+
+## ⚠️ 重要：你直接在主 session 跑
+
+本任务已设置为 `mode=sessionId`, `session_id=me`，触发后**直接跑在主 session 里**。你的输出会**自动出现在主 session 对话流**，用户能直接看到。**不需要调用 communicate 工具**。
+
+## 🎯 任务目标
+
+拉取 **494 只** A 股 3 类增量数据（日 K / 股东户数 / 融资融券），下载 CSV 到本地，导入 master.db（四库架构·总数据库）。然后**对当前持仓的标的**自动跑 update-pnl 更新 positions.db / capital.db。**最后跑 review 审查所有持仓**（结合高量战法仓位管理规则给出操作建议）。
+
+## ⚠️ 持仓特别关注（运行时从 positions.db 读取——prompt 永不嵌持仓快照，事实源唯一）
+
+```bash
+sqlite3 /workspace/stock_db/positions.db "SELECT code, name, shares, cost_basis, entry_price, t30_deadline FROM positions WHERE active=1;"
+```
+
+持仓规则速查（结合监控输出给建议）：止损 R005 强平 -5% ｜ 加仓 R007（+5%）/ R008（+10%，均需量比 1.5 + MA5）｜ 浮盈回撤 30% 减半（R005A）｜ T+30 兜底 R010
+
+## ⚠️ 关键：Sandbox 隔离已修复
+
+你的运行环境是**主 session**（mode=sessionId），**可以访问 /workspace/**，**可以写文件**。✅ 直接下载 CSV 到 /workspace/stock_db/data/ 并运行导入脚本。
+
+## 📋 票单（494 只，分 5 批 ≤50）
+
+主 session 维护的 **494 票**在 `/workspace/stock_db/stocks_batches_500.json`（5 批）。
+
+## 🔁 执行流程
+
+### 1️⃣ 确定日期窗口
+- 昨天 = 最近 A 股交易日
+- beginDate = endDate = 昨天
+
+### 2️⃣ 调 API 拉数据
+
+每次调 connector__hengsheng__call_api：
+- A. 日 K：api_id=StockDailyQuote
+- B. 股东户数：api_id=ShareholderNum，beginDate=昨天-365
+- C. 融资融券：api_id=StockSecuritiesMargin
+
+**票单从 stocks_batches_500.json 读取**。
+
+下载方式：用 connector 工具获取 CSV URL 后，bash curl 下载到 /workspace/stock_db/data/。
+
+### 3️⃣ 运行导入
+bash: cd /workspace/stock_db && python3 daily_update.py import
+
+### 4️⃣ 修复 volume 单位
+bash: sqlite3 /workspace/stock_db/master.db "UPDATE stock_daily SET volume = volume * 10000 WHERE trade_date >= '2026-08-28' AND volume < 1000000;"
+
+### 5️⃣ 【关键】对每个持仓跑 update-pnl
+
+查询当前活跃持仓：
+bash: sqlite3 /workspace/stock_db/positions.db "SELECT code, name FROM positions WHERE active=1;"
+
+对每个持仓标的，拉取其昨天的收盘价（StockDailyQuote），然后跑：
+bash: cd /workspace/stock_db && python3 portfolio_manager.py update-pnl <昨天> <code> <close_price>
+
+### 6️⃣ 【关键】持仓规则实时监控
+
+```python
+import sqlite3
+conn = sqlite3.connect('/workspace/stock_db/positions.db')
+positions = conn.execute("SELECT code, name, shares, cost_basis, entry_price FROM positions WHERE active=1").fetchall()
+for code, name, shares, cost, entry in positions:
+    cur = conn.execute("SELECT close_price FROM stock_daily WHERE stock_code = ? ORDER BY trade_date DESC LIMIT 1", (code,))
+    row = cur.fetchone()
+    if row:
+        price = row[0]
+        pnl_pct = (price / entry - 1) * 100
+        pnl_amount = (price - entry) * shares
+
+        alerts = []
+        if pnl_pct <= -5:
+            alerts.append(f'🔴 R005 强平：当前 {price} ≤ 止损 {entry*0.95:.2f} 浮亏 {pnl_pct:.2f}%')
+        elif pnl_pct < 0:
+            alerts.append(f'🔴 R024 红线：浮盈变浮亏 {pnl_pct:.2f}%')
+        elif pnl_pct >= 10 and price >= entry * 1.10:
+            alerts.append(f'🟢 R008 加仓 2：浮盈 +{pnl_pct:.2f}%，价格 {price} ≥ {entry*1.10:.2f}')
+        elif pnl_pct >= 5 and price >= entry * 1.05:
+            alerts.append(f'🟢 R007 加仓 1：浮盈 +{pnl_pct:.2f}%，价格 {price} ≥ {entry*1.05:.2f}')
+
+        print(f"=== {code} {name} ===")
+        print(f"  成本 {entry:.2f} → 现价 {price:.2f} 浮盈 {pnl_amount:+,.0f} ({pnl_pct:+.2f}%)")
+        if alerts:
+            for a in alerts:
+                print(f"  {a}")
+        else:
+            print(f"  ✅ 无触发")
+```
+
+### 7️⃣ 跑 review 审查所有持仓
+
+bash: cd /workspace/stock_db && python3 position_sizer.py review
+
+### 8️⃣ 输出报告（不要调 communicate，直接输出报告）
+
+报告格式：
+---
+✅ stock-db-daily-update 完成 (<YYYYMMDD>)
+📊 master.db:
+  - 票数: 494 只（沪深 300 + 申万 Top10 + 申万 Top10）
+  - daily: <N> 条 / shnum: <N> 条 / margin: <N> 条
+  - 修复 volume 单位：<N> 条
+
+💰 positions.db / capital.db 自动更新:
+  - <code> <name> 收盘 <价> · 浮盈 <额> 元 (<%>%)
+  - [<触发报警或"无触发">]
+
+🔍 仓位审查:
+  - <code> <name> <成本> → <现价> <操作建议>
+
+✅ 所有数据已同步！
+---
+
+## 📌 关键约束
+- **不要删除自己**（长期任务，每工作日 16:00 触发）
+- **直接输出报告**，不要调 communicate
+- INSERT OR REPLACE 保证重复跑安全
+- 拉完直接写数据库（不要用 drive 中转）
+- 必须**对每个活跃持仓跑 update-pnl**（关键步骤）
+- 必须**跑 review 审查持仓**（关键步骤）
+- 票单从 **/workspace/stock_db/stocks_batches_500.json** 读取（494 只）

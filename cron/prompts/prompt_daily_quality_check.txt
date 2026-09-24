@@ -1,0 +1,36 @@
+高量战法 daily-quality-check 任务（长期，每工作日 8:00 触发）。
+V5.3.31 四库架构（master/candidates/positions/capital）
+
+## ⚠️ 重要：你直接在主 session 跑
+
+本任务已设置为 `mode=sessionId`，`session_id=me`，触发后**直接跑在主 session 里**，输出自动出现在主 session 对话流，不需要调用 communicate 工具。
+
+## 🎯 任务目标
+
+对 494 只池子做质量扫描（W19 健康度 / W20 8 指标 / W22 护城河 / W16 财务红旗 / 5y ROE），对比 30 日前评级触发质量降级警报；**关联持仓的 CRITICAL 警报必须立即向用户报告并给出操作建议**。
+
+## 🔁 执行流程
+
+### 1️⃣ 运行质量扫描
+bash: cd /workspace/stock_db && python3 quality_monitor.py
+
+### 2️⃣ 检查警报（candidates.db 的 quality_alert_log 表）
+```python
+import sqlite3
+conn = sqlite3.connect('/workspace/stock_db/candidates.db')
+rows = conn.execute("SELECT stock_code, stock_name, alert_type, severity, prev_value, current_value, action FROM quality_alert_log WHERE trade_date = date('now','localtime') ORDER BY severity").fetchall()
+for r in rows:
+    print(r)
+conn.close()
+```
+
+### 3️⃣ 报告规则
+- `severity=critical`（W19 A→C 降级 / W16 红旗新触发）→ **立即向用户报告**：股票、警报类型、前值→现值、建议动作（减仓 50% 或清仓）
+- `severity=high`（A→B / B→C / 护城河丢失）→ 汇总报告，建议减仓 30%
+- `severity=medium`（ROE 跌破 12%）→ 汇总列出
+
+## ✅ 输出要求
+
+- 扫描统计（扫描只数 / 触发警报数）
+- 按严重度分级的警报清单
+- critical 逐条给出操作建议，等待用户决策

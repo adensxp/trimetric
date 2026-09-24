@@ -1,0 +1,22 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 语法编译
+        run: python3 -m py_compile scripts/*.py
+      - name: 未定义名检查（F821 —— 曾漏过 STOCK_DB 类 bug）
+        run: |
+          pip install ruff
+          ruff check --select E9,F821,F823 scripts/ tests/
+      - name: 规则单测（31 项边界回归）
+        run: python3 tests/test_rules.py
+      - name: 配置单测（日志落盘 + 幂等）
+        run: python3 tests/test_config.py
